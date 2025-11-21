@@ -129,7 +129,8 @@ pub mod spec {
 
         // B' = B * 2^128 (precomputed constant point)
         // TODO: For optimal performance, this should also use the wider lookup table when precomputed-tables is enabled
-        let table_B_128 = &NafLookupTable5::<CachedPoint>::from(&constants::ED25519_BASEPOINT_128_POINT);
+        let table_B_128 =
+            &NafLookupTable5::<CachedPoint>::from(&constants::ED25519_BASEPOINT_128_POINT);
 
         let mut Q = ExtendedPoint::identity();
 

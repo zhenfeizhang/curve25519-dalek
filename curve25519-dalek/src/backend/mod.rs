@@ -268,7 +268,9 @@ pub fn vartime_triple_base_mul_128_128_256(
         }
         #[cfg(all(curve25519_dalek_backend = "simd", nightly))]
         BackendKind::Avx512 => {
-            vector::scalar_mul::vartime_triple_base::spec_avx512ifma_avx512vl::mul_128_128_256(a1, A1, a2, A2, b)
+            vector::scalar_mul::vartime_triple_base::spec_avx512ifma_avx512vl::mul_128_128_256(
+                a1, A1, a2, A2, b,
+            )
         }
         BackendKind::Serial => {
             serial::scalar_mul::vartime_triple_base::mul_128_128_256(a1, A1, a2, A2, b)
