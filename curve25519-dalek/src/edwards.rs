@@ -85,7 +85,7 @@
 //! successful decompression of a compressed point, or else by
 //! operations on other (valid) `EdwardsPoint`s.
 //!
-//! [curve_models]: https://docs.rs/curve25519-dalek/latest/curve25519-dalek/backend/serial/curve_models/index.html
+//! [curve_models]: https://docs.rs/curve25519-dalek/latest/curve25519_dalek/backend/serial/curve_models/index.html
 
 // We allow non snake_case names because coordinates in projective space are
 // traditionally denoted by the capitalisation of their respective
@@ -117,7 +117,7 @@ use {
     subtle::CtOption,
 };
 
-#[cfg(any(test, feature = "rand_core"))]
+#[cfg(feature = "rand_core")]
 use rand_core::RngCore;
 
 use subtle::Choice;
@@ -599,7 +599,7 @@ impl EdwardsPoint {
 
         // Compute the denominators in a batch
         let mut denominators = eds.iter().map(|p| &p.Z - &p.Y).collect::<Vec<_>>();
-        FieldElement::batch_invert(&mut denominators);
+        FieldElement::invert_batch_alloc(&mut denominators);
 
         // Now compute the Montgomery u coordinate for every point
         let mut ret = Vec::with_capacity(eds.len());
@@ -618,10 +618,22 @@ impl EdwardsPoint {
 
     /// Compress several `EdwardsPoint`s into `CompressedEdwardsY` format, using a batch inversion
     /// for a significant speedup.
+    pub fn compress_batch<const N: usize>(inputs: &[EdwardsPoint; N]) -> [CompressedEdwardsY; N] {
+        let mut zs: [_; N] = core::array::from_fn(|i| inputs[i].Z);
+        FieldElement::invert_batch(&mut zs);
+
+        core::array::from_fn(|i| {
+            let x = &inputs[i].X * &zs[i];
+            let y = &inputs[i].Y * &zs[i];
+            AffinePoint { x, y }.compress()
+        })
+    }
+    /// Compress several `EdwardsPoint`s into `CompressedEdwardsY` format, using a batch inversion
+    /// for a significant speedup.
     #[cfg(feature = "alloc")]
-    pub fn compress_batch(inputs: &[EdwardsPoint]) -> Vec<CompressedEdwardsY> {
+    pub fn compress_batch_alloc(inputs: &[EdwardsPoint]) -> Vec<CompressedEdwardsY> {
         let mut zs = inputs.iter().map(|input| input.Z).collect::<Vec<_>>();
-        FieldElement::batch_invert(&mut zs);
+        FieldElement::invert_batch_alloc(&mut zs);
 
         inputs
             .iter()
@@ -751,7 +763,7 @@ impl EdwardsPoint {
     ///
     /// Uses rejection sampling, generating a random `CompressedEdwardsY` and then attempting point
     /// decompression, rejecting invalid points.
-    #[cfg(any(test, feature = "rand_core"))]
+    #[cfg(feature = "rand_core")]
     pub fn random<R: RngCore + ?Sized>(rng: &mut R) -> Self {
         let mut repr = CompressedEdwardsY([0u8; 32]);
         loop {
@@ -1779,7 +1791,7 @@ impl CofactorGroup for EdwardsPoint {
 mod test {
     use super::*;
 
-    use rand_core::TryRngCore;
+    use rand::TryRngCore;
 
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
@@ -2068,7 +2080,7 @@ mod test {
     /// Check that mul_base_clamped and mul_clamped agree
     #[test]
     fn mul_base_clamped() {
-        let mut csprng = rand_core::OsRng;
+        let mut csprng = rand::rngs::SysRng;
 
         // Make a random curve point in the curve. Give it torsion to make things interesting.
         #[cfg(feature = "precomputed-tables")]
@@ -2175,30 +2187,49 @@ mod test {
             CompressedEdwardsY::identity()
         );
 
+        assert_eq!(
+            EdwardsPoint::compress_batch(&[EdwardsPoint::identity()]),
+            [CompressedEdwardsY::identity()]
+        );
         #[cfg(feature = "alloc")]
-        {
-            let compressed = EdwardsPoint::compress_batch(&[EdwardsPoint::identity()]);
-            assert_eq!(&compressed, &[CompressedEdwardsY::identity()]);
-        }
+        assert_eq!(
+            &EdwardsPoint::compress_batch_alloc(&[EdwardsPoint::identity()]),
+            &[CompressedEdwardsY::identity()]
+        );
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "rand_core")]
     #[test]
     fn compress_batch() {
         let mut rng = rand::rng();
 
         // TODO(tarcieri): proptests?
-        // Make some points deterministically then randomly
-        let mut points = (1u64..16)
-            .map(|n| constants::ED25519_BASEPOINT_POINT * Scalar::from(n))
-            .collect::<Vec<_>>();
-        points.extend(core::iter::repeat_with(|| EdwardsPoint::random(&mut rng)).take(100));
-        let compressed = EdwardsPoint::compress_batch(&points);
+
+        // Make some test points deterministically then randomly
+        const TEST_VEC_LEN: usize = 117;
+        let points: [EdwardsPoint; TEST_VEC_LEN] = core::array::from_fn(|i| {
+            if i < 17 {
+                // The first 17 are multiple of the basepoint
+                constants::ED25519_BASEPOINT_POINT * Scalar::from(i as u64)
+            } else {
+                // The rest are random
+                EdwardsPoint::random(&mut rng)
+            }
+        });
+
+        // Compress the points individually. This is our reference result
+        let expected_compressed = core::array::from_fn(|i| points[i].compress());
 
         // Check that the batch-compressed points match the individually compressed ones
-        for (point, compressed) in points.iter().zip(&compressed) {
-            assert_eq!(&point.compress(), compressed);
-        }
+        assert_eq!(EdwardsPoint::compress_batch(&points), expected_compressed);
+
+        // Check that the batch-compressed (with alloc) points match the individually compressed
+        // ones
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            EdwardsPoint::compress_batch_alloc(&points),
+            expected_compressed
+        );
     }
 
     #[test]
@@ -2239,7 +2270,7 @@ mod test {
     }
 
     // A single iteration of a consistency check for MSM.
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn multiscalar_consistency_iter(n: usize) {
         let mut rng = rand::rng();
 
@@ -2266,7 +2297,7 @@ mod test {
     // parameters.
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn multiscalar_consistency_n_100() {
         let iters = 50;
         for _ in 0..iters {
@@ -2275,7 +2306,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn multiscalar_consistency_n_250() {
         let iters = 50;
         for _ in 0..iters {
@@ -2284,7 +2315,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn multiscalar_consistency_n_500() {
         let iters = 50;
         for _ in 0..iters {
@@ -2293,7 +2324,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn multiscalar_consistency_n_1000() {
         let iters = 50;
         for _ in 0..iters {
@@ -2302,7 +2333,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn batch_to_montgomery() {
         let mut rng = rand::rng();
 
@@ -2327,7 +2358,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "rand_core"))]
     fn vartime_precomputed_vs_nonprecomputed_multiscalar() {
         let mut rng = rand::rng();
 

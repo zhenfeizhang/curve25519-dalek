@@ -5,9 +5,16 @@ major series.
 
 ## 5.x series
 
-## Unreleased
+## 5.0.0-pre.4
 
-* Add Lizard bytes-to-point injection for Ristretto. Gated under `lizard`.
+* Add allocation-free `EdwardsPoint::compress_batch()`
+* Perf: Use maximum available NAF window size in `VartimePrecomputedStraus`
+* Upgrade `rand_core` dependency to v0.10.0-rc-3
+
+## 5.0.0-pre.3
+
+* Add Lizard bytes-to-point injection for Ristretto. Gated under `lizard` feature.
+* Upgrade `rand_core` dependency to v0.10.0-rc-2
 
 ## 5.0.0-pre.1
 
