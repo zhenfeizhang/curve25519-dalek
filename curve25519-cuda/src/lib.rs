@@ -1,7 +1,7 @@
 use core::ffi::c_char;
-use std::ffi::CStr;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::short_weierstrass::SwPoint;
+use std::ffi::CStr;
 
 /// Affine point layout compatible with SPPARK `affine_t` (host-side).
 ///
@@ -115,12 +115,10 @@ pub fn msm_curve25519_gpu(points: &[SwPoint], scalars: &[Scalar]) -> Result<SwPo
         .ok_or_else(|| "invalid point returned from CUDA".to_string())
 }
 
-
-
 fn msm_curve25519_cpu(points: &[SwPoint], scalars: &[Scalar]) -> Result<SwPoint, String> {
     use curve25519_dalek::edwards::EdwardsPoint;
-    use curve25519_dalek::traits::VartimeMultiscalarMul;
     use curve25519_dalek::traits::Identity;
+    use curve25519_dalek::traits::VartimeMultiscalarMul;
     use rayon::prelude::*;
 
     if points.len() != scalars.len() {
@@ -199,6 +197,5 @@ pub fn msm_curve25519_gpu_bytes(
     Ok(out)
 }
 
-
 #[cfg(test)]
-mod tests ;
+mod tests;

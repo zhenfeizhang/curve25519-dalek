@@ -1,16 +1,28 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use curve25519_dalek::edwards::EdwardsPoint;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::short_weierstrass::SwPoint;
 use rayon::prelude::*;
 
 fn cpu_msm(points: &[SwPoint], scalars: &[Scalar]) -> SwPoint {
-    use curve25519_dalek::traits::VartimeMultiscalarMul;
-    let mut ed_points = Vec::with_capacity(points.len());
-    for point in points {
-        ed_points.push(point.to_edwards().expect("valid sw point"));
-    }
-    let out = EdwardsPoint::vartime_multiscalar_mul(scalars, &ed_points);
+    use curve25519_dalek::traits::{Identity, VartimeMultiscalarMul};
+    assert_eq!(points.len(), scalars.len());
+
+    let ed_points: Vec<EdwardsPoint> = points
+        .par_iter()
+        .map(|point| point.to_edwards().expect("valid sw point"))
+        .collect();
+
+    let chunk_size =
+        (ed_points.len().max(1) + rayon::current_num_threads() - 1) / rayon::current_num_threads();
+    let out = ed_points
+        .par_chunks(chunk_size)
+        .zip(scalars.par_chunks(chunk_size))
+        .map(|(point_chunk, scalar_chunk)| {
+            EdwardsPoint::vartime_multiscalar_mul(scalar_chunk, point_chunk)
+        })
+        .reduce(EdwardsPoint::identity, |acc, partial| acc + partial);
+
     SwPoint::from_edwards(&out)
 }
 

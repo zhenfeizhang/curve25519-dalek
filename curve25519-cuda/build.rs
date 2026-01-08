@@ -17,7 +17,9 @@ fn main() {
     let all_gpus = sppark_dir.join("util").join("all_gpus.cpp");
     let blst_include = blst_dir.join("src");
 
-    let nvcc = env::var("NVCC").ok().or_else(|| which::which("nvcc").ok().map(|p| p.display().to_string()));
+    let nvcc = env::var("NVCC")
+        .ok()
+        .or_else(|| which::which("nvcc").ok().map(|p| p.display().to_string()));
     if nvcc.is_none() {
         println!("cargo:warning=NVCC not found; Curve25519 CUDA backend disabled");
         return;
