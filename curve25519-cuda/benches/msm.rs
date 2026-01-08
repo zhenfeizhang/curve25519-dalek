@@ -88,7 +88,7 @@ fn bench_cpu_vs_gpu(c: &mut Criterion) {
             &log_n,
             |b, _| {
                 b.iter(|| {
-                    let _ = curve_25519_cuda::msm_curve25519_gpu(&points, &scalars);
+                    let _ = curve25519_cuda::msm_curve25519_gpu(&points, &scalars);
                 });
             },
         );
